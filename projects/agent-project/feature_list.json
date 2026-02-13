@@ -11,7 +11,7 @@
         "Initialize feature_list.json",
         "Create claude-progress.txt"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": 2,

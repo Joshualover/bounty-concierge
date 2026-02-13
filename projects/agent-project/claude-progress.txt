@@ -13,3 +13,15 @@ direct agent:main:cron:...088838  22h ago   glm-4.7        115k/205k (56%)      
 direct agent:main:cron:...d9e3ed  34h ago   glm-4.7        55k/205k (27%)       system id:a698bed1-9714-4fae-9ece-e151c1d9e3ed
 direct agent:main:cron:...8c9e5a  35h ago   glm-4.7        81k/205k (40%)       system id:35451bc5-2a79-47eb-bf50-e175ac8c9e5a
 
+[2026-02-13 02:11:49] Task 2: Completed - Session store: /root/.openclaw/agents/main/sessions/sessions.json
+Sessions listed: 8
+Kind   Key                        Age       Model          Tokens (ctx %)       Flags
+direct agent:main:main            just now  glm-4.7        205k/205k (100%)     system id:35e5adb9-c627-40d7-8e66-fa6a9b5e6458
+direct agent:main:cron:...a50052  10h ago   glm-4.7        56k/205k (27%)       system id:30440256-5685-4e0b-886e-305c56eca7de
+direct agent:main:cron:...eca7de  10h ago   glm-4.7        56k/205k (27%)       system id:30440256-5685-4e0b-886e-305c56eca7de
+direct agent:main:cron:...cf43ec  11h ago   glm-4.7        106k/205k (52%)      system id:cd98fa77-5790-4aa3-afe7-92399915ed85
+direct agent:main:cron:...15ed85  11h ago   glm-4.7        106k/205k (52%)      system id:cd98fa77-5790-4aa3-afe7-92399915ed85
+direct agent:main:cron:...088838  22h ago   glm-4.7        115k/205k (56%)      system id:ff7bb1d1-f6c9-45db-ae94-05b8bb088838
+direct agent:main:cron:...d9e3ed  34h ago   glm-4.7        55k/205k (27%)       system id:a698bed1-9714-4fae-9ece-e151c1d9e3ed
+direct agent:main:cron:...8c9e5a  35h ago   glm-4.7        81k/205k (40%)       system id:35451bc5-2a79-47eb-bf50-e175ac8c9e5a
+
