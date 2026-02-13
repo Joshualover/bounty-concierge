@@ -1,0 +1,39 @@
+{
+  "project": "OpenClaw Long-Running Agent System v2.0",
+  "created_at": "2026-02-13T02:02:10.410724",
+  "features": [
+    {
+      "id": 1,
+      "category": "infrastructure",
+      "description": "Set up project directory structure",
+      "steps": [
+        "Create /root/.openclaw/workspace/projects/agent-project",
+        "Initialize feature_list.json",
+        "Create claude-progress.txt"
+      ],
+      "passes": false
+    },
+    {
+      "id": 2,
+      "category": "database",
+      "description": "Initialize SQLite database",
+      "steps": [
+        "Create tasks table with extended schema",
+        "Create feature tracking table",
+        "Test database connection"
+      ],
+      "passes": false
+    },
+    {
+      "id": 3,
+      "category": "git",
+      "description": "Initialize git repository",
+      "steps": [
+        "Run git init",
+        "Create .gitignore",
+        "Make initial commit"
+      ],
+      "passes": false
+    }
+  ]
+}
