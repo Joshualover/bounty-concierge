@@ -41,6 +41,24 @@ def _get(path, params=None, headers=None):
         return {"error": "Node returned non-JSON response"}
 
 
+def _post(path, data=None, headers=None):
+    """Issue a POST to the RustChain node, returning parsed JSON or error dict."""
+    url = f"{RUSTCHAIN_NODE_URL}{path}"
+    try:
+        resp = requests.post(url, json=data, headers=headers,
+                             verify=_VERIFY, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.ConnectionError:
+        return {"error": f"Could not connect to node at {RUSTCHAIN_NODE_URL}"}
+    except requests.Timeout:
+        return {"error": "Request to node timed out (10s)"}
+    except requests.RequestException as exc:
+        return {"error": f"Request failed: {exc}"}
+    except ValueError:
+        return {"error": "Node returned non-JSON response"}
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -159,6 +177,32 @@ def register_wallet_guide(name):
         f"  Create an issue on Scottcjn/rustchain-bounties titled:\n"
         f"    \"Wallet Registration: {name}\"\n"
         f"  An admin will set up your wallet entry.\n"
+    )
+
+
+def transfer_rtc(from_wallet, to_wallet, amount, admin_key=None):
+    """Transfer RTC between wallets via the admin transfer endpoint.
+
+    Requires the RC_ADMIN_KEY environment variable or explicit admin_key.
+
+    Args:
+        from_wallet: Source miner/wallet ID.
+        to_wallet: Destination miner/wallet ID.
+        amount: Amount of RTC to transfer (float).
+        admin_key: Optional admin key override.
+
+    Returns:
+        Parsed JSON dict from the node (includes pending_id on success),
+        or an error dict on failure.
+    """
+    key = admin_key or os.environ.get("RC_ADMIN_KEY", "")
+    if not key:
+        return {"error": "RC_ADMIN_KEY is required for transfers"}
+    return _post(
+        "/wallet/transfer",
+        data={"from_miner": from_wallet, "to_miner": to_wallet,
+              "amount_rtc": amount},
+        headers={"X-Admin-Key": key},
     )
 
 

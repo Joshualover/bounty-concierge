@@ -28,10 +28,20 @@ from concierge.wallet_helper import (
     get_holder_stats,
     get_pending_transfers,
     register_wallet_guide,
+    transfer_rtc,
     validate_wallet_name,
 )
 from concierge.payout_tracker import check_pending, check_history, format_payout_status
 from concierge.skill_matcher import recommend
+from concierge.discord_bridge import (
+    already_migrated,
+    debit_discord_balance,
+    get_discord_balance,
+    get_migration_history,
+    list_discord_holders,
+    record_migration,
+    record_migration_force,
+)
 
 # Optional modules -- degrade gracefully if missing or broken.
 try:
@@ -193,7 +203,8 @@ def _cmd_wallet(args):
     action = args.wallet_action
 
     if not action:
-        print("Usage: concierge wallet {register,balance}", file=sys.stderr)
+        print("Usage: concierge wallet {register,balance,holders,stats,miners,migrate}",
+              file=sys.stderr)
         print("Run 'concierge wallet --help' for details.", file=sys.stderr)
         sys.exit(1)
 
@@ -319,9 +330,158 @@ def _cmd_wallet(args):
             print("-" * 70)
             print("%d active miners" % len(miners))
 
+    elif action == "migrate":
+        _cmd_wallet_migrate(args)
+
     else:
         print("Unknown wallet action: %s" % action, file=sys.stderr)
         sys.exit(1)
+
+
+def _cmd_wallet_migrate(args):
+    """Handle the 'wallet migrate' subcommand."""
+    from concierge import config as _cfg
+
+    # --- history ---
+    if args.history:
+        history = get_migration_history()
+        if args.json:
+            _print_json(history)
+        elif not history:
+            print("No migrations recorded yet.")
+        else:
+            print("%-4s %-20s %-25s %10s  %-10s  %s" % (
+                "#", "Discord ID", "Target Wallet", "RTC", "Status", "Date"))
+            print("-" * 100)
+            for i, m in enumerate(history, 1):
+                print("%-4d %-20s %-25s %10.2f  %-10s  %s" % (
+                    i, m["discord_user_id"], m["target_wallet"],
+                    m["amount_rtc"], m["status"], m["created_at"]))
+        return
+
+    # --- list ---
+    if getattr(args, "list", False):
+        min_bal = getattr(args, "min_balance", 0.1)
+        if args.dry_run:
+            print("[dry-run] Would query Discord economy DB on NAS for holders >= %.2f RTC" % min_bal)
+            return
+        holders = list_discord_holders(min_balance=min_bal)
+        if isinstance(holders, dict) and "error" in holders:
+            print("Error: %s" % holders["error"], file=sys.stderr)
+            sys.exit(1)
+        if args.json:
+            _print_json(holders)
+        elif not holders:
+            print("No Discord holders found with balance >= %.2f RTC" % min_bal)
+        else:
+            total = sum(h["balance"] for h in holders)
+            print("=== Discord Economy Holders (>= %.2f RTC) ===" % min_bal)
+            print()
+            print("%-4s %-22s %10s %12s %12s  %s" % (
+                "#", "Discord User ID", "Balance", "Earned", "Spent", "Migrated?"))
+            print("-" * 90)
+            for i, h in enumerate(holders, 1):
+                migrated = "YES" if already_migrated(h["user_id"]) else "-"
+                print("%-4d %-22s %10.4f %12.4f %12.4f  %s" % (
+                    i, h["user_id"], h["balance"],
+                    h.get("total_earned", 0), h.get("total_spent", 0),
+                    migrated))
+            print("-" * 90)
+            print("%d holders  |  %.4f RTC total" % (len(holders), total))
+        return
+
+    # --- migrate a specific user ---
+    user_id = args.user
+    to_wallet = args.to_wallet
+
+    if not user_id or not to_wallet:
+        print("Error: --user and --to are required for migration.", file=sys.stderr)
+        print("  concierge wallet migrate --user DISCORD_ID --to WALLET_NAME")
+        print("  concierge wallet migrate --list    (to see eligible users)")
+        print("  concierge wallet migrate --history (to see past migrations)")
+        sys.exit(1)
+
+    # Validate target wallet name
+    valid, msg = validate_wallet_name(to_wallet)
+    if not valid:
+        print("Error: Invalid target wallet name: %s" % msg, file=sys.stderr)
+        sys.exit(1)
+
+    # Check for prior migration
+    if not args.force and already_migrated(user_id):
+        print("Error: Discord user %s has already been migrated." % user_id,
+              file=sys.stderr)
+        print("Use --force to re-migrate.", file=sys.stderr)
+        sys.exit(1)
+
+    # Fetch Discord balance
+    discord_info = get_discord_balance(user_id)
+    if isinstance(discord_info, dict) and "error" in discord_info:
+        print("Error: %s" % discord_info["error"], file=sys.stderr)
+        sys.exit(1)
+
+    balance = discord_info.get("balance", 0)
+    if balance < 0.1:
+        print("Error: Discord balance %.4f RTC is below minimum (0.1 RTC)" % balance,
+              file=sys.stderr)
+        sys.exit(1)
+
+    source_wallet = _cfg.MIGRATION_SOURCE_WALLET
+
+    print("=== Discord-to-Chain Migration ===")
+    print()
+    print("  Discord user:    %s" % user_id)
+    print("  Discord balance: %.4f RTC" % balance)
+    print("  Target wallet:   %s" % to_wallet)
+    print("  Source wallet:   %s" % source_wallet)
+    print("  Amount:          %.4f RTC" % balance)
+    print()
+
+    if args.dry_run:
+        print("[dry-run] Would transfer %.4f RTC from %s to %s" % (
+            balance, source_wallet, to_wallet))
+        print("[dry-run] Then debit Discord user %s by %.4f RTC" % (user_id, balance))
+        return
+
+    # Step 1: On-chain credit (BEFORE Discord debit -- safety first)
+    print("Step 1/3: Transferring %.4f RTC on-chain (%s -> %s)..." % (
+        balance, source_wallet, to_wallet))
+    chain_result = transfer_rtc(source_wallet, to_wallet, balance)
+    if isinstance(chain_result, dict) and "error" in chain_result:
+        print("FAILED: On-chain transfer error: %s" % chain_result["error"],
+              file=sys.stderr)
+        sys.exit(1)
+
+    tx_id = chain_result.get("pending_id", chain_result.get("tx_id", "unknown"))
+    print("  OK -- pending_id: %s" % tx_id)
+
+    # Step 2: Debit Discord balance
+    print("Step 2/3: Debiting Discord balance...")
+    debit_result = debit_discord_balance(user_id, balance)
+    if isinstance(debit_result, dict) and "error" in debit_result:
+        print("WARNING: Discord debit failed: %s" % debit_result["error"],
+              file=sys.stderr)
+        print("  On-chain transfer succeeded but Discord balance NOT debited.",
+              file=sys.stderr)
+        print("  Manual fix needed on NAS.", file=sys.stderr)
+        # Still record as partial
+        if args.force:
+            record_migration_force(user_id, to_wallet, balance, str(tx_id), "partial")
+        else:
+            record_migration(user_id, to_wallet, balance, str(tx_id), "partial")
+        sys.exit(1)
+    print("  OK -- Discord balance zeroed")
+
+    # Step 3: Record locally
+    print("Step 3/3: Recording migration...")
+    if args.force:
+        record_migration_force(user_id, to_wallet, balance, str(tx_id))
+    else:
+        record_migration(user_id, to_wallet, balance, str(tx_id))
+    print("  OK")
+
+    print()
+    print("Migration complete: %.4f RTC -> %s" % (balance, to_wallet))
 
 
 def _cmd_status(args):
@@ -595,6 +755,20 @@ def _build_parser():
 
     p_w_miners = wallet_sub.add_parser("miners", help="List active attesting miners")
     _add_common_flags(p_w_miners)
+
+    p_w_migrate = wallet_sub.add_parser(
+        "migrate", help="Migrate Discord economy balances to on-chain wallets")
+    _add_common_flags(p_w_migrate)
+    p_w_migrate.add_argument("--list", action="store_true",
+                             help="List Discord holders eligible for migration")
+    p_w_migrate.add_argument("--user", help="Discord user ID to migrate")
+    p_w_migrate.add_argument("--to", dest="to_wallet", help="Target on-chain wallet name")
+    p_w_migrate.add_argument("--history", action="store_true",
+                             help="Show migration history")
+    p_w_migrate.add_argument("--force", action="store_true",
+                             help="Re-migrate even if already done")
+    p_w_migrate.add_argument("--min-balance", type=float, default=0.1,
+                             help="Minimum balance for --list (default: 0.1)")
 
     # --- status ---
     p_status = sub.add_parser("status", help="Check pending payouts for a wallet")

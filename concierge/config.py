@@ -36,6 +36,17 @@ REPOS = [
     "Scottcjn/grazer-skill",
 ]
 
+# --- Discord economy NAS (for wallet migration) ---
+
+DISCORD_NAS_HOST = _env("DISCORD_NAS_HOST", "192.168.0.160")
+DISCORD_NAS_USER = _env("DISCORD_NAS_USER", "sophia")
+DISCORD_NAS_PASSWORD = _env("DISCORD_NAS_PASSWORD")
+DISCORD_DB_PATH = _env(
+    "DISCORD_DB_PATH",
+    "/mnt/nvme/sophia/databases/rustcoin_economy.db",
+)
+MIGRATION_SOURCE_WALLET = _env("MIGRATION_SOURCE_WALLET", "founder_team_bounty")
+
 # --- Docs directory (for FAQ doc search) ---
 
 DOCS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
