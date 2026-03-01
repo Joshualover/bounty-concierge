@@ -21,7 +21,11 @@ from concierge.bounty_index import aggregate, fetch_bounties
 from concierge.faq_engine import answer as faq_answer
 from concierge.wallet_helper import (
     check_wallet_exists,
+    get_active_miners,
+    get_all_holders,
     get_balance,
+    get_epoch_info,
+    get_holder_stats,
     get_pending_transfers,
     register_wallet_guide,
     validate_wallet_name,
@@ -229,8 +233,94 @@ def _cmd_wallet(args):
                 for k, v in result.items():
                     print(f"  {k}: {v}")
 
+    elif action == "holders":
+        if args.dry_run:
+            print("[dry-run] Would fetch all wallet holders (requires RC_ADMIN_KEY)")
+            return
+        holders = get_all_holders()
+        if isinstance(holders, dict) and "error" in holders:
+            print("Error: %s" % holders["error"], file=sys.stderr)
+            sys.exit(1)
+        # Filter
+        cat_filter = getattr(args, "category", None)
+        if cat_filter:
+            holders = [h for h in holders if h["category"] == cat_filter]
+        min_bal = getattr(args, "min_balance", None)
+        if min_bal is not None:
+            holders = [h for h in holders if h["amount_rtc"] >= min_bal]
+        limit = getattr(args, "limit", 50)
+        holders = holders[:limit]
+        if args.json:
+            _print_json(holders)
+        else:
+            print("%-4s %-45s %12s  %s" % ("#", "Wallet", "Balance RTC", "Category"))
+            print("-" * 75)
+            for i, h in enumerate(holders, 1):
+                print("%-4d %-45s %12.2f  %s" % (
+                    i, h["miner_id"][:45], h["amount_rtc"], h["category"]))
+            print("-" * 75)
+            print("Showing %d wallets" % len(holders))
+
+    elif action == "stats":
+        if args.dry_run:
+            print("[dry-run] Would compute wallet statistics (requires RC_ADMIN_KEY)")
+            return
+        stats = get_holder_stats()
+        if isinstance(stats, dict) and "error" in stats:
+            print("Error: %s" % stats["error"], file=sys.stderr)
+            sys.exit(1)
+        if args.json:
+            _print_json(stats)
+        else:
+            print("=== RustChain Wallet Statistics ===")
+            print()
+            print("Total wallets:        %d" % stats["total_wallets"])
+            print("With balance:         %d" % stats["wallets_with_balance"])
+            print("Empty:                %d" % stats["empty_wallets"])
+            print("Total RTC:            {:,.2f}".format(stats["total_rtc"]))
+            print()
+            print("--- By Category ---")
+            for cat, info in sorted(stats["categories"].items(),
+                                    key=lambda x: x[1]["rtc"], reverse=True):
+                pct = info["rtc"] / stats["total_rtc"] * 100 if stats["total_rtc"] else 0
+                print("  %-15s %4d wallets  %12.2f RTC  (%5.1f%%)" % (
+                    cat, info["count"], info["rtc"], pct))
+            print()
+            print("--- User Distribution (excl. founder/platform) ---")
+            for tier, info in stats["distribution"].items():
+                print("  %-20s %4d holders  %12.2f RTC" % (
+                    tier, info["count"], info["rtc"]))
+
+    elif action == "miners":
+        if args.dry_run:
+            print("[dry-run] Would fetch active miners list")
+            return
+        miners = get_active_miners()
+        if isinstance(miners, dict) and "error" in miners:
+            print("Error: %s" % miners["error"], file=sys.stderr)
+            sys.exit(1)
+        epoch = get_epoch_info()
+        if args.json:
+            _print_json({"epoch": epoch, "miners": miners})
+        else:
+            if not isinstance(epoch, dict) or "error" in epoch:
+                print("Epoch info unavailable")
+            else:
+                print("Epoch %s | Slot %s | Enrolled: %s | Pot: %s RTC" % (
+                    epoch.get("epoch", "?"), epoch.get("slot", "?"),
+                    epoch.get("enrolled_miners", "?"), epoch.get("epoch_pot", "?")))
+            print()
+            print("%-4s %-40s %-15s %s" % ("#", "Miner", "Architecture", "Multiplier"))
+            print("-" * 70)
+            for i, m in enumerate(miners, 1):
+                print("%-4d %-40s %-15s %sx" % (
+                    i, m["miner"][:40], m.get("device_arch", "?"),
+                    m.get("antiquity_multiplier", "?")))
+            print("-" * 70)
+            print("%d active miners" % len(miners))
+
     else:
-        print(f"Unknown wallet action: {action}", file=sys.stderr)
+        print("Unknown wallet action: %s" % action, file=sys.stderr)
         sys.exit(1)
 
 
@@ -492,6 +582,19 @@ def _build_parser():
     p_w_balance = wallet_sub.add_parser("balance", help="Check wallet RTC balance")
     _add_common_flags(p_w_balance)
     p_w_balance.add_argument("name", help="Wallet or miner ID")
+
+    p_w_holders = wallet_sub.add_parser("holders", help="List all wallet holders")
+    _add_common_flags(p_w_holders)
+    p_w_holders.add_argument("--category", choices=["named", "founder", "platform", "auto-hash", "redteam"],
+                             help="Filter by wallet category")
+    p_w_holders.add_argument("--min-balance", type=float, help="Minimum RTC balance")
+    p_w_holders.add_argument("--limit", type=int, default=50, help="Max results (default: 50)")
+
+    p_w_stats = wallet_sub.add_parser("stats", help="Wallet holder statistics")
+    _add_common_flags(p_w_stats)
+
+    p_w_miners = wallet_sub.add_parser("miners", help="List active attesting miners")
+    _add_common_flags(p_w_miners)
 
     # --- status ---
     p_status = sub.add_parser("status", help="Check pending payouts for a wallet")

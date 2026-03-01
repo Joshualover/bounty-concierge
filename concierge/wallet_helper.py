@@ -1,9 +1,11 @@
 """Wallet operations via the RustChain node API.
 
 Provides balance checks, wallet existence checks, pending transfer lookups,
-name validation, and registration guidance for bounty hunters.
+name validation, registration guidance, and holder/stats tracking for bounty
+hunters and admins.
 """
 
+import os
 import re
 
 import requests
@@ -21,11 +23,12 @@ _WALLET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
 # API helpers
 # ---------------------------------------------------------------------------
 
-def _get(path, params=None):
+def _get(path, params=None, headers=None):
     """Issue a GET to the RustChain node, returning parsed JSON or error dict."""
     url = f"{RUSTCHAIN_NODE_URL}{path}"
     try:
-        resp = requests.get(url, params=params, verify=_VERIFY, timeout=_TIMEOUT)
+        resp = requests.get(url, params=params, headers=headers,
+                            verify=_VERIFY, timeout=_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
     except requests.ConnectionError:
@@ -183,3 +186,115 @@ def check_eligibility(wallet_id):
 def registration_instructions(name):
     """Alias for register_wallet_guide(). Kept for backwards compatibility."""
     return register_wallet_guide(name)
+
+
+# ---------------------------------------------------------------------------
+# Wallet tracking / holder stats (requires RC_ADMIN_KEY)
+# ---------------------------------------------------------------------------
+
+_FOUNDER_WALLETS = {"founder_community", "founder_founders",
+                    "founder_dev_fund", "founder_team_bounty"}
+_PLATFORM_WALLETS = {"bottube_platform", "minecraft_rewards_pool"}
+_REDTEAM_MARKERS = ("exploit", "redteam", "replay", "clockspoof", "rl-a-")
+
+
+def _classify_wallet(miner_id):
+    """Return a category string for the wallet."""
+    if miner_id in _FOUNDER_WALLETS:
+        return "founder"
+    if miner_id in _PLATFORM_WALLETS:
+        return "platform"
+    if any(m in miner_id for m in _REDTEAM_MARKERS):
+        return "redteam"
+    if miner_id.endswith("RTC") and len(miner_id) > 30:
+        return "auto-hash"
+    return "named"
+
+
+def get_all_holders(admin_key=None):
+    """Fetch all wallet balances from the node (requires admin key).
+
+    Returns:
+        List of dicts with keys: miner_id, amount_rtc, category.
+        Sorted by balance descending. None-id entries are filtered.
+    """
+    key = admin_key or os.environ.get("RC_ADMIN_KEY", "")
+    if not key:
+        return {"error": "RC_ADMIN_KEY is required for holder listing"}
+
+    result = _get("/api/balances", headers={"X-Admin-Key": key})
+    if "error" in result:
+        return result
+
+    raw = result.get("balances", [])
+    holders = []
+    for w in raw:
+        mid = w.get("miner_id")
+        if not mid:
+            continue
+        holders.append({
+            "miner_id": mid,
+            "amount_rtc": w.get("amount_rtc", 0.0),
+            "category": _classify_wallet(mid),
+        })
+    holders.sort(key=lambda h: h["amount_rtc"], reverse=True)
+    return holders
+
+
+def get_holder_stats(admin_key=None):
+    """Compute summary statistics across all wallets.
+
+    Returns:
+        Dict with aggregate stats, or an error dict.
+    """
+    holders = get_all_holders(admin_key)
+    if isinstance(holders, dict) and "error" in holders:
+        return holders
+
+    total_rtc = sum(h["amount_rtc"] for h in holders)
+    nonzero = [h for h in holders if h["amount_rtc"] > 0]
+
+    by_cat = {}
+    for h in holders:
+        cat = h["category"]
+        by_cat.setdefault(cat, {"count": 0, "rtc": 0.0})
+        by_cat[cat]["count"] += 1
+        by_cat[cat]["rtc"] += h["amount_rtc"]
+
+    # Distribution tiers
+    tiers = {
+        "whale (>=1000)": [h for h in nonzero if h["category"] not in ("founder", "platform") and h["amount_rtc"] >= 1000],
+        "large (100-999)": [h for h in nonzero if h["category"] not in ("founder", "platform") and 100 <= h["amount_rtc"] < 1000],
+        "medium (10-99)": [h for h in nonzero if h["category"] not in ("founder", "platform") and 10 <= h["amount_rtc"] < 100],
+        "micro (<10)": [h for h in nonzero if h["category"] not in ("founder", "platform") and h["amount_rtc"] < 10],
+    }
+
+    return {
+        "total_wallets": len(holders),
+        "wallets_with_balance": len(nonzero),
+        "empty_wallets": len(holders) - len(nonzero),
+        "total_rtc": total_rtc,
+        "categories": by_cat,
+        "distribution": {k: {"count": len(v), "rtc": sum(h["amount_rtc"] for h in v)} for k, v in tiers.items()},
+    }
+
+
+def get_active_miners():
+    """Fetch the list of currently attesting miners.
+
+    Returns:
+        List of miner dicts from /api/miners, or an error dict.
+    """
+    result = _get("/api/miners")
+    if isinstance(result, list):
+        return result
+    return result
+
+
+def get_epoch_info():
+    """Fetch current epoch/slot info.
+
+    Returns:
+        Dict with epoch, slot, enrolled_miners, etc.
+    """
+    return _get("/epoch")
