@@ -1,69 +1,52 @@
-# Contributing to Bounty Concierge
+# Contributing to this Project
 
-Thanks for your interest in improving the RustChain Bounty Concierge.
+Thank you for your interest in contributing! This document provides guidelines for contributing to the project.
 
-## Setup
+## How to Contribute
 
-```bash
-git clone https://github.com/Scottcjn/bounty-concierge.git
-cd bounty-concierge
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
+### Reporting Bugs
 
-## Fork, Branch, PR Workflow
+Before creating bug reports, please check existing issues as you might find out that you don't need to create one. When you are creating a bug report, please include as many details as possible:
 
-1. Fork the repository on GitHub.
-2. Create a branch with a descriptive name:
-   - `fix/skill-matcher-scoring`
-   - `feat/devto-announcer`
-   - `docs/faq-wallet-setup`
-3. Make your changes.  Keep each PR focused on one logical change.
-4. Push your branch and open a Pull Request against `main`.
-5. Reference any related bounty issue in your PR description.
+* **Use a clear and descriptive title**
+* **Describe the exact steps to reproduce the problem**
+* **Provide specific examples to demonstrate the steps**
+* **Describe the behavior you observed and what behavior you expected**
+* **Include screenshots if possible**
+* **Include system information (OS, version, etc.)**
 
-## Code Style
+### Suggesting Enhancements
 
-- **Python 3.9+** minimum.  Use features available in 3.9 and above.
-- **Type hints encouraged** on function signatures and return types.
-- Formatter: **black** (default settings).
-- Keep imports sorted: stdlib, third-party, local.
-- No emojis in code or docs.
-- Docstrings on all public functions and classes.
+Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion, please include:
 
-## Running Tests
+* **Use a clear and descriptive title**
+* **Provide a detailed description of the suggested enhancement**
+* **Explain why this enhancement would be useful**
+* **List some examples of how this enhancement would be used**
 
-```bash
-python -m pytest tests/
-```
+### Pull Requests
 
-Tests are written with **pytest**.  New functionality should include
-corresponding test coverage when practical.
+* Fill in the required template
+* Follow the project's coding standards
+* Include appropriate tests
+* Update documentation as needed
+* Add an entry to the changelog if applicable
 
-## What We Especially Welcome
+## Development Setup
 
-- **New FAQ entries** in `docs/` -- common questions from bounty hunters.
-- **Skill tag improvements** -- expand `data/skill_tags.json` with more
-  keywords so the matcher recommends bounties more accurately.
-- **Platform integrations** -- wire up new posting targets in
-  `concierge/announcer.py` (4claw, AgentChan, Dev.to, Twitter).
-- **Bug fixes** -- if `concierge browse` or `concierge wallet` misbehaves,
-  file an issue or send a PR.
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/REPO_NAME.git`
+3. Create a branch: `git checkout -b feature/your-feature-name`
+4. Make your changes and commit: `git commit -m 'Add some feature'`
+5. Push to your fork: `git push origin feature/your-feature-name`
+6. Open a Pull Request
 
-## Bounties for Concierge Improvements
+## Code of Conduct
 
-Improvements to the concierge tool itself are eligible for RTC bounties.
-Check the open issues on
-[Scottcjn/rustchain-bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
-for tagged concierge tasks, or propose your own enhancement as a new issue.
+Please note that this project is released with a [Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
-## Reporting Bugs
+## Questions?
 
-Use the [Bug Report](https://github.com/Scottcjn/bounty-concierge/issues/new?template=bug_report.yml)
-issue template.
+Feel free to open an issue for any questions or concerns.
 
-## License
-
-By contributing you agree that your contributions will be licensed under the
-MIT License (see [LICENSE](LICENSE)).
+Thank you for contributing! 🎉
