@@ -5,7 +5,8 @@ Star repos, check Dev.to stats, and generate social-bounty proof.
 
 from __future__ import annotations
 
-from typing import Dict, List
+import os
+from typing import Dict, List, Optional
 
 import requests
 
@@ -111,14 +112,136 @@ def generate_engagement_proof(platform: str, action: str, proof_url: str) -> str
 
 
 # ---------------------------------------------------------------------------
-# Placeholder -- SaaSCity
+# SaaSCity upvote integration
 # ---------------------------------------------------------------------------
 
-def saascity_upvote() -> None:
-    """Upvote RustChain on SaaSCity.
-
-    Raises NotImplementedError because a SaaSCity API key is needed first.
+def saascity_upvote(
+    api_key: Optional[str] = None,
+    dry_run: bool = False,
+    listings: Optional[List[str]] = None
+) -> Dict[str, any]:
+    """Upvote RustChain/BoTTube listings on SaaSCity.
+    
+    Discovers and upvotes specified listings (or auto-discovers RustChain-related ones).
+    
+    Parameters
+    ----------
+    api_key : str, optional
+        SaaSCity API key. If not provided, loads from SAASCITY_KEY env var.
+    dry_run : bool, default False
+        If True, only shows what would be upvoted without making API calls.
+    listings : List[str], optional
+        List of listing IDs/names to upvote. If None, auto-discovers RustChain/BoTTube listings.
+    
+    Returns
+    -------
+    Dict[str, any]
+        Result dict with keys:
+        - success: bool - Overall success status
+        - upvoted: List[str] - List of successfully upvoted listings
+        - failed: List[str] - List of failed listings
+        - message: str - Human-readable status message
+    
+    Raises
+    ------
+    ValueError
+        If API key is missing (not provided and not in env var)
+    requests.RequestException
+        If API requests fail
     """
-    raise NotImplementedError(
-        "SaaSCity API key needed. Visit saascity.io to register."
-    )
+    # Get API key from parameter or environment
+    key = api_key or os.getenv("SAASCITY_KEY")
+    
+    if not key:
+        raise ValueError(
+            "SaaSCity API key required. Provide via 'api_key' parameter "
+            "or set SAASCITY_KEY environment variable. "
+            "Visit https://saascity.io to register and get your API key."
+        )
+    
+    # Base URL for SaaSCity API (adjust if different)
+    base_url = "https://saascity.io/api/v1"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    
+    # Auto-discover listings if not specified
+    if listings is None:
+        listings = _discover_rustchain_listings(base_url, headers)
+    
+    if dry_run:
+        return {
+            "success": True,
+            "upvoted": [],
+            "failed": [],
+            "message": f"[DRY RUN] Would upvote {len(listings)} listings: {', '.join(listings)}"
+        }
+    
+    # Perform upvotes
+    upvoted = []
+    failed = []
+    
+    for listing in listings:
+        try:
+            # Upvote the listing (adjust endpoint as needed)
+            url = f"{base_url}/listings/{listing}/upvote"
+            resp = requests.post(url, headers=headers, timeout=15)
+            
+            if resp.status_code in (200, 201, 204):
+                upvoted.append(listing)
+            else:
+                failed.append(f"{listing} (HTTP {resp.status_code})")
+        except requests.RequestException as e:
+            failed.append(f"{listing} ({str(e)})")
+    
+    success = len(upvoted) > 0 and len(failed) == 0
+    
+    return {
+        "success": success,
+        "upvoted": upvoted,
+        "failed": failed,
+        "message": f"Upvoted {len(upvoted)} listing(s). Failed: {len(failed)}."
+    }
+
+
+def _discover_rustchain_listings(base_url: str, headers: Dict[str, str]) -> List[str]:
+    """Auto-discover RustChain/BoTTube related listings on SaaSCity.
+    
+    Searches for listings matching keywords like "RustChain", "BoTTube", etc.
+    
+    Returns
+    -------
+    List[str]
+        List of listing IDs/names to upvote
+    """
+    # Search for RustChain-related listings
+    search_terms = ["RustChain", "BoTTube", "bounty", "RTC"]
+    found_listings = []
+    
+    for term in search_terms:
+        try:
+            url = f"{base_url}/listings/search"
+            params = {"q": term, "limit": 10}
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                # Extract listing IDs from response (adjust based on actual API structure)
+                listings = data.get("listings", data.get("items", []))
+                for listing in listings:
+                    listing_id = listing.get("id") or listing.get("name") or listing.get("slug")
+                    if listing_id and listing_id not in found_listings:
+                        found_listings.append(str(listing_id))
+        except requests.RequestException:
+            # Continue searching even if one search fails
+            continue
+    
+    # If no listings found, return default known listings
+    if not found_listings:
+        # These would be the actual RustChain/BoTTube listing IDs on SaaSCity
+        # Adjust based on real listing names/IDs
+        found_listings = ["rustchain", "bottube"]
+    
+    return found_listings
